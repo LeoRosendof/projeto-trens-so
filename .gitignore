@@ -1,0 +1,6 @@
+build/
+verificacao/verificador
+*.pro.user*
+# material fornecido pelo professor
+SO-Atv01-Descritivo.pdf
+Trem_-_Codigo_Fonte.zip
