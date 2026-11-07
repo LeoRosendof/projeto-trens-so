@@ -1,6 +1,21 @@
 build/
-verificacao/verificador
 *.pro.user*
+
+# artefatos do qmake/make (build feito dentro de Trem/)
+*.o
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+.qmake.stash
+/[Tt]rem/Makefile*
+/[Tt]rem/Trem
+
+# executável do verificador
+verificacao/verificador
+
 # material fornecido pelo professor
 SO-Atv01-Descritivo.pdf
 Trem_-_Codigo_Fonte.zip
+work.md
+imagens/
