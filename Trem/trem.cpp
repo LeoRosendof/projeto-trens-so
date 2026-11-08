@@ -1,149 +1,93 @@
 #include "trem.h"
-
-#include <algorithm>
-#include <cerrno>
-#include <cstring>
-#include <ctime>
-#include <semaphore.h>
-#include <stdexcept>
-#include <string>
+#include <QtCore>
+#include <QMutex>
+#include <QSemaphore>
 
 using namespace Malha;
 
-static pthread_mutex_t regiao[NUM_REGIOES];
-static pthread_mutex_t cruzamento[NUM_CRUZAMENTOS];
-static sem_t semaforo[NUM_SEMAFOROS];
-static pthread_once_t recursosCriados = PTHREAD_ONCE_INIT;
+//Um mutex por região crítica: só um trem por vez em cada trecho compartilhado
+static QMutex regiao[NUM_REGIOES];
 
-static void verificar(int erro, const char *operacao) {
-  if (erro != 0)
-    throw std::runtime_error(std::string(operacao) + ": " + strerror(erro));
+//Um semáforo por entroncamento: no máximo 2 dos 3 trens do ciclo de espera
+static QSemaphore s1(VAGAS_SEMAFORO), s2(VAGAS_SEMAFORO), s3(VAGAS_SEMAFORO), s4(VAGAS_SEMAFORO);
+static QSemaphore *semaforo[NUM_SEMAFOROS] = {&s1, &s2, &s3, &s4};
+
+//Construtor
+Trem::Trem(int ID, int x, int y){
+    this->ID = ID;
+    this->x = x;
+    this->y = y;
+    velocidade = 100;
+    possuidos = 0;
+
+    percurso = montarPercurso(ID - 1);
+    posicao = -1;
+    for(size_t i = 0; i < percurso.pontos.size(); i++)
+        if(percurso.pontos[i].x == x && percurso.pontos[i].y == y)
+            posicao = i;
+    if(posicao < 0 || percurso.recursos[posicao] != 0)
+        qFatal("Posicao inicial invalida para o trem %d", ID);
 }
 
-static void criarRecursos() {
-  for (int i = 0; i < NUM_REGIOES; i++)
-    pthread_mutex_init(&regiao[i], nullptr);
-  for (int i = 0; i < NUM_CRUZAMENTOS; i++)
-    pthread_mutex_init(&cruzamento[i], nullptr);
-  for (int i = 0; i < NUM_SEMAFOROS; i++)
-    sem_init(&semaforo[i], 0, VAGAS_SEMAFORO);
+void Trem::setVelocidade(int valor){
+    velocidade = valor;
 }
 
-static void esperarSemaforo(sem_t *s) {
-  while (sem_wait(s) == -1 && errno == EINTR) {
-  }
-}
-
-static void dormir(long microssegundos) {
-  struct timespec t;
-  t.tv_sec = microssegundos / 1000000;
-  t.tv_nsec = (microssegundos % 1000000) * 1000;
-  while (nanosleep(&t, &t) == -1 && errno == EINTR) {
-  }
-}
-
-Trem::Trem(int ID)
-    : ID(ID), velocidade(100), executando(false), iniciada(false),
-      possuidos(0) {
-  verificar(pthread_once(&recursosCriados, criarRecursos), "pthread_once");
-  percurso = montarPercurso(ID - 1);
-  x = percurso.pontos[percurso.inicio].x;
-  y = percurso.pontos[percurso.inicio].y;
-}
-
-Trem::~Trem() {
-  parar();
-  aguardar();
-}
-
-void Trem::iniciar() {
-  if (iniciada)
-    return;
-  executando = true;
-  verificar(pthread_create(&thread, nullptr, &Trem::executar, this),
-            "pthread_create");
-  iniciada = true;
-}
-
-void Trem::parar() { executando = false; }
-
-void Trem::aguardar() {
-  if (!iniciada)
-    return;
-  pthread_join(thread, nullptr);
-  iniciada = false;
-}
-
-void Trem::setVelocidade(int valor) {
-  velocidade = std::max(0, std::min(valor, VELOCIDADE_MAXIMA));
-}
-
-void *Trem::executar(void *arg) {
-  static_cast<Trem *>(arg)->run();
-  return nullptr;
-}
-
-void Trem::adquirir(unsigned recursos) {
-  for (int i = 0; i < NUM_RECURSOS && executando; i++) {
-    unsigned bit = 1u << i;
-    if (!(recursos & bit))
-      continue;
-    if (i < NUM_SEMAFOROS)
-      esperarSemaforo(&semaforo[i]);
-    else if (i < NUM_SEMAFOROS + NUM_REGIOES)
-      pthread_mutex_lock(&regiao[i - NUM_SEMAFOROS]);
-    else
-      pthread_mutex_lock(&cruzamento[i - NUM_SEMAFOROS - NUM_REGIOES]);
-    possuidos |= bit;
-  }
-}
-
-void Trem::liberar(unsigned recursos) {
-  for (int i = NUM_RECURSOS - 1; i >= 0; i--) {
-    unsigned bit = 1u << i;
-    if (!(recursos & possuidos & bit))
-      continue;
-    if (i < NUM_SEMAFOROS)
-      sem_post(&semaforo[i]);
-    else if (i < NUM_SEMAFOROS + NUM_REGIOES)
-      pthread_mutex_unlock(&regiao[i - NUM_SEMAFOROS]);
-    else
-      pthread_mutex_unlock(&cruzamento[i - NUM_SEMAFOROS - NUM_REGIOES]);
-    possuidos &= ~bit;
-  }
-}
-
-void Trem::run() {
-  const int n = percurso.pontos.size();
-  int pos = percurso.inicio;
-  emit updateGUI(ID, x, y);
-
-  while (executando) {
-    if (velocidade == 0) {
-      dormir(10000);
-      continue;
+//Pede os recursos um a um, na ordem fixa: semáforos e depois regiões
+void Trem::adquirir(unsigned recursos){
+    for(int i = 0; i < NUM_RECURSOS; i++){
+        if(!(recursos & (1u << i)))
+            continue;
+        if(i < NUM_SEMAFOROS)
+            semaforo[i]->acquire();
+        else
+            regiao[i - NUM_SEMAFOROS].lock();
+        possuidos |= 1u << i;
     }
+}
 
-    int prox = (pos + 1) % n;
-    adquirir(percurso.recursos[prox] & ~possuidos);
-    if (!executando)
-      break;
-
-    if (velocidade == 0) {
-      liberar(possuidos & ~percurso.recursos[pos]);
-      continue;
+void Trem::liberar(unsigned recursos){
+    for(int i = NUM_RECURSOS - 1; i >= 0; i--){
+        if(!(recursos & possuidos & (1u << i)))
+            continue;
+        if(i < NUM_SEMAFOROS)
+            semaforo[i]->release();
+        else
+            regiao[i - NUM_SEMAFOROS].unlock();
+        possuidos &= ~(1u << i);
     }
+}
 
-    pos = prox;
-    x = percurso.pontos[pos].x;
-    y = percurso.pontos[pos].y;
+//Função a ser executada após executar trem->START
+void Trem::run(){
+    const int total = percurso.pontos.size();
     emit updateGUI(ID, x, y);
-    liberar(possuidos & ~percurso.recursos[pos]);
 
-    int v = velocidade;
-    if (v > 0)
-      dormir(100000 / v);
-  }
+    while(!isInterruptionRequested()){
+        if(velocidade == 0){    //Slider na extremidade esquerda: trem parado
+            msleep(10);
+            continue;
+        }
 
-  liberar(possuidos);
+        int proxima = (posicao + 1) % total;
+        adquirir(percurso.recursos[proxima] & ~possuidos);
+
+        //Se o trem foi parado durante a espera, não prende o trecho à frente
+        if(velocidade == 0 || isInterruptionRequested()){
+            liberar(possuidos & ~percurso.recursos[posicao]);
+            continue;
+        }
+
+        posicao = proxima;
+        x = percurso.pontos[posicao].x;
+        y = percurso.pontos[posicao].y;
+        emit updateGUI(ID, x, y);    //Emite um sinal
+        liberar(possuidos & ~percurso.recursos[posicao]);
+
+        //10 px por movimento: 50 px/s em v = 1 e 10000 px/s em v = 200
+        int v = velocidade;
+        if(v > 0)
+            usleep(200000 / v);
+    }
+    liberar(possuidos);
 }
