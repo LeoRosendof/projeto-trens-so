@@ -3,7 +3,7 @@
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
   <property name="geometry">
-   <rect><x>0</x><y>0</y><width>861</width><height>650</height></rect>
+   <rect><x>0</x><y>0</y><width>956</width><height>600</height></rect>
   </property>
   <property name="windowTitle">
    <string>Projeto dos Trens</string>
@@ -322,7 +322,7 @@ QSlider::handle:horizontal { background: #e6e6e6; border: 2px solid #333333; wid
    </widget>
    <widget class="SliderTrem" name="slider_a">
     <property name="geometry">
-     <rect><x>21</x><y>548</y><width>110</width><height>32</height></rect>
+     <rect><x>825</x><y>36</y><width>110</width><height>32</height></rect>
     </property>
     <property name="maximum">
      <number>200</number>
@@ -336,7 +336,7 @@ QSlider::handle:horizontal { background: #e6e6e6; border: 2px solid #333333; wid
    </widget>
    <widget class="SliderTrem" name="slider_b">
     <property name="geometry">
-     <rect><x>139</x><y>548</y><width>110</width><height>32</height></rect>
+     <rect><x>825</x><y>106</y><width>110</width><height>32</height></rect>
     </property>
     <property name="maximum">
      <number>200</number>
@@ -350,7 +350,7 @@ QSlider::handle:horizontal { background: #e6e6e6; border: 2px solid #333333; wid
    </widget>
    <widget class="SliderTrem" name="slider_c">
     <property name="geometry">
-     <rect><x>257</x><y>548</y><width>110</width><height>32</height></rect>
+     <rect><x>825</x><y>176</y><width>110</width><height>32</height></rect>
     </property>
     <property name="maximum">
      <number>200</number>
@@ -364,7 +364,7 @@ QSlider::handle:horizontal { background: #e6e6e6; border: 2px solid #333333; wid
    </widget>
    <widget class="SliderTrem" name="slider_d">
     <property name="geometry">
-     <rect><x>375</x><y>548</y><width>110</width><height>32</height></rect>
+     <rect><x>825</x><y>246</y><width>110</width><height>32</height></rect>
     </property>
     <property name="maximum">
      <number>200</number>
@@ -378,7 +378,7 @@ QSlider::handle:horizontal { background: #e6e6e6; border: 2px solid #333333; wid
    </widget>
    <widget class="SliderTrem" name="slider_e">
     <property name="geometry">
-     <rect><x>493</x><y>548</y><width>110</width><height>32</height></rect>
+     <rect><x>825</x><y>316</y><width>110</width><height>32</height></rect>
     </property>
     <property name="maximum">
      <number>200</number>
@@ -392,7 +392,7 @@ QSlider::handle:horizontal { background: #e6e6e6; border: 2px solid #333333; wid
    </widget>
    <widget class="SliderTrem" name="slider_f">
     <property name="geometry">
-     <rect><x>611</x><y>548</y><width>110</width><height>32</height></rect>
+     <rect><x>825</x><y>386</y><width>110</width><height>32</height></rect>
     </property>
     <property name="maximum">
      <number>200</number>
@@ -406,7 +406,7 @@ QSlider::handle:horizontal { background: #e6e6e6; border: 2px solid #333333; wid
    </widget>
    <widget class="SliderTrem" name="slider_m">
     <property name="geometry">
-     <rect><x>729</x><y>548</y><width>110</width><height>32</height></rect>
+     <rect><x>825</x><y>489</y><width>110</width><height>32</height></rect>
     </property>
     <property name="maximum">
      <number>200</number>
@@ -421,7 +421,7 @@ QSlider::handle:horizontal { background: #e6e6e6; border: 2px solid #333333; wid
   </widget>
   <widget class="QMenuBar" name="menuBar">
    <property name="geometry">
-    <rect><x>0</x><y>0</y><width>861</width><height>22</height></rect>
+    <rect><x>0</x><y>0</y><width>956</width><height>22</height></rect>
    </property>
   </widget>
   <widget class="QToolBar" name="mainToolBar">
