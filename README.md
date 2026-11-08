@@ -1,31 +1,27 @@
 # Projeto dos Trens: resumo da solução
 
 ## Estrutura
-- `Trem/`: projeto Qt5 (baseado no código do SIGAA). Abra `Trem.pro` no Qt Creator ou rode `qmake && make`.
-- `verificacao/`: verificador opcional, que não faz parte do executável. Ele usa a mesma tabela da malha e prova que não há colisão nem deadlock. Para rodar: `make -C verificacao && ./verificacao/verificador`.
+- `Trem/`: projeto Qt5 construído sobre o código disponibilizado no SIGAA. Abra `Trem.pro` no Qt Creator ou rode `qmake && make` dentro da pasta.
+- `verificacao/`: verificador opcional, que não faz parte do executável. Usa as mesmas tabelas da malha e confere colisões e deadlocks. Para rodar: `make -C verificacao && ./verificacao/verificador`.
 
 ## Threads
-Cada trem roda numa `pthread` própria (`pthread_create` em `trem.cpp`; o encerramento é feito com `pthread_join`). Ela anda 5 px por vez no seu retângulo, no sentido anti-horário, e avisa a interface pelo sinal `updateGUI`. Não há thread central: cada trem decide sozinho, usando os mutexes e semáforos.
+Cada trem é uma `QThread` (classe `Trem`, função `run()`) e não depende das demais. Ela anda 10 px por vez no seu retângulo, no sentido anti-horário, e avisa a interface pelo sinal `updateGUI`. Não há thread central: cada trem decide sozinho, usando os mutexes e semáforos. Os trens partem assim que o programa abre.
 
 ## Velocidade
-Os sliders vão de 0 a 200. Em 0 o trem para. Com valor v, ele anda 5 px a cada 100000/v µs: 50 px/s em v = 1 e 10000 px/s em v = 200. O slider mestre `m` sobrescreve todos os trens e move os sliders individuais. Depois disso, cada slider individual volta a valer só para o seu trem.
+Os sliders vão de 0 a 200. Em 0 o trem para. Com valor v, ele anda 10 px a cada 200000/v µs: 50 px/s em v = 1 e 10000 px/s em v = 200. O slider mestre `m` move todos os sliders individuais, que atualizam a velocidade de cada trem. Depois disso, cada slider individual vale só para o seu trem, até o mestre ser usado de novo.
 
-## Colisões (mutexes)
-Todos os recursos são POSIX: `pthread_mutex_t` para regiões e cruzamentos, `sem_t` (`sem_init`/`sem_wait`/`sem_post`) para os semáforos. Compile no Linux com `qmake && make` (o `.pro` já passa `-pthread`).
+## Colisões (9 mutexes)
+Cada uma das regiões críticas 1 a 9 é um trilho percorrido em sentidos opostos por dois trens, protegido por um `QMutex`.
 
-- **9 mutexes de região (1 a 9):** cada região é um trilho único percorrido em sentidos opostos pelos dois trens vizinhos. Então só um trem por vez pode estar nela.
-- **4 mutexes de cruzamento (J1 a J4):** são os pontos em "T" onde três regiões se encontram (J1 = 1/2/3, J2 = 4/5/8, J3 = 3/5/6, J4 = 6/7/9). Perto do cruzamento, quem protege é o mutex dele.
-- O trem pede o mutex quando está a menos de 25 px da região ou do cruzamento. Os quadrados têm 20 px, então sobram 5 px de folga. Ele solta o mutex assim que sai dessa distância.
-- **Regra de não bloquear o cruzamento:** o trem só entra no cruzamento se já tiver a região de saída.
+- O trem pede o mutex antes de chegar a menos de 30 px da região e só o solta depois de se afastar dela. Como o trem tem 21 × 17 px, sobra folga entre os quadrados.
+- Num entroncamento, onde três regiões se encontram, o trem precisa ter a região de entrada e a de saída ao mesmo tempo. Com três regiões, dois pares sempre têm uma em comum, então dois trens nunca ficam no mesmo entroncamento.
 
-## Deadlocks (semáforos)
-- **O problema:** em cada cruzamento, 3 trens formam um ciclo de espera. Por exemplo, em J1: `a` está na região 1 e quer a 2; `c` está na 2 e quer a 3; `b` está na 3 e quer a 1.
-- **Semáforo de 2 vagas por cruzamento (S1 a S4):** no máximo 2 dos 3 trens podem estar perto do cruzamento ao mesmo tempo. Assim o ciclo nunca se fecha, como na solução do jantar dos filósofos.
-- **Trens do meio:** b, c e e passam por três cruzamentos seguidos. Cada um pega a vaga do último cruzamento logo no início do trecho, antes de ter qualquer mutex:
-  - `b` antecipa S1;
-  - `c` antecipa S4;
-  - `e` antecipa S2.
-- **Ordem fixa:** em cada passo, os recursos são pedidos sempre na mesma ordem: semáforos, depois regiões, depois cruzamentos.
+## Deadlocks (4 semáforos)
+- **O problema:** em cada entroncamento, três trens podem formar um ciclo de espera. Exemplo: `a` está na região 1 e quer a 2, `c` está na 2 e quer a 3, `b` está na 3 e quer a 1.
+- **Semáforo de 2 vagas por entroncamento:** um `QSemaphore` para cada ciclo (S1 = regiões 1, 2, 3; S2 = 4, 5, 8; S3 = 3, 5, 6; S4 = 6, 7, 9). No máximo 2 dos 3 trens entram no ciclo, então ele nunca se fecha. É a mesma ideia da solução do jantar dos filósofos.
+- **Trens do meio:** `b`, `c` e `e` atravessam três entroncamentos seguidos, e os semáforos poderiam travar entre si. Por isso cada um pega uma vaga já no início do trecho: `b` pega S1, `c` pega S4 e `e` pega S2.
+- **Ordem fixa:** em cada passo, o trem pede primeiro os semáforos e depois os mutexes, sempre na mesma ordem.
+- **Trem parado:** se o slider vai a 0 enquanto o trem espera, ele devolve o que tinha acabado de pegar, para não prender à toa o trecho à frente.
 
-## Prova
-O verificador explora todos os estados alcançáveis, ou seja, qualquer combinação de velocidades: são 448.446 estados. Ele não encontra nenhum estado em que um grupo de trens espere um pelo outro para sempre. Também confere todos os pares de posições: dois trens que se tocariam sempre precisam de um mesmo mutex. Sem os semáforos, ele mostra o deadlock do exemplo acima.
+## Verificação
+O verificador explora todos os estados alcançáveis, o que cobre qualquer combinação de velocidades: 139.652 estados, sem deadlock. Também confere todos os pares de posições: dois trens que se tocariam sempre precisam de um mesmo mutex. Sem os semáforos, ele mostra o deadlock do exemplo acima. A opção `--busca` compara as combinações de vagas antecipadas.

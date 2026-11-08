@@ -1,243 +1,149 @@
 #include "malha.h"
 
 #include <algorithm>
-#include <cstdlib>
-#include <stdexcept>
 
 namespace Malha {
 
-int colunaX(int coluna) { return ORIGEM_X + coluna * ESPACO_X; }
+/* Colunas e linhas da grade, em pixels (canto superior esquerdo do trem). */
+static const int COLUNA[7] = {60, 180, 300, 420, 540, 660, 780};
+static const int LINHA[4] = {30, 190, 350, 510};
 
-int linhaY(int linha) { return ORIGEM_Y + linha * ESPACO_Y; }
+/* Retângulo de cada trem: coluna esq., coluna dir., linha topo, linha base. */
+static const int RETANGULO[NUM_TRENS][4] = {
+    {1, 5, 0, 1}, // a
+    {1, 3, 1, 2}, // b
+    {3, 5, 1, 2}, // c
+    {0, 2, 2, 3}, // d
+    {2, 4, 2, 3}, // e
+    {4, 6, 2, 3}, // f
+};
 
-char letra(int trem) { return 'a' + trem; }
+/* Trecho de cada região crítica: (coluna, linha) até (coluna, linha). */
+static const int REGIAO[NUM_REGIOES][4] = {
+    {1, 1, 3, 1}, // 1
+    {3, 1, 5, 1}, // 2
+    {3, 1, 3, 2}, // 3
+    {1, 2, 2, 2}, // 4
+    {2, 2, 3, 2}, // 5
+    {3, 2, 4, 2}, // 6
+    {4, 2, 5, 2}, // 7
+    {2, 2, 2, 3}, // 8
+    {4, 2, 4, 3}, // 9
+};
 
-Retangulo retangulo(int trem) {
+/* Regiões que cada trem atravessa, na ordem em que passa por elas. */
+static const std::vector<int> ROTA[NUM_TRENS] = {
+    {1, 2},       // a
+    {4, 5, 3, 1}, // b
+    {2, 3, 6, 7}, // c
+    {8, 4},       // d
+    {9, 6, 5, 8}, // e
+    {7, 9},       // f
+};
 
-  static const int grade[NUM_TRENS][4] = {
-      {1, 5, 0, 1}, {1, 3, 1, 2}, {3, 5, 1, 2},
-      {0, 2, 2, 3}, {2, 4, 2, 3}, {4, 6, 2, 3},
-  };
-  const int *g = grade[trem];
-  return {colunaX(g[0]), colunaX(g[1]), linhaY(g[2]), linhaY(g[3])};
-}
-
-Segmento segmentoRegiao(int regiao) {
-
-  static const int grade[NUM_REGIOES][4] = {
-      {1, 1, 3, 1}, {3, 1, 5, 1}, {3, 1, 3, 2}, {1, 2, 2, 2}, {2, 2, 3, 2},
-      {3, 2, 4, 2}, {4, 2, 5, 2}, {2, 2, 2, 3}, {4, 2, 4, 3},
-  };
-  const int *g = grade[regiao - 1];
-  return {{colunaX(g[0]), linhaY(g[1])}, {colunaX(g[2]), linhaY(g[3])}};
-}
-
-Ponto pontoCruzamento(int cruzamento) {
-  static const int grade[NUM_CRUZAMENTOS][2] = {
-      {3, 1},
-      {2, 2},
-      {3, 2},
-      {4, 2},
-  };
-  return {colunaX(grade[cruzamento][0]), linhaY(grade[cruzamento][1])};
-}
-
-static unsigned regioesDoCruzamento(int cruzamento) {
-  static const int regioes[NUM_CRUZAMENTOS][3] = {
-      {1, 2, 3},
-      {4, 5, 8},
-      {3, 5, 6},
-      {6, 7, 9},
-  };
-  const int *r = regioes[cruzamento];
-  return bitRegiao(r[0]) | bitRegiao(r[1]) | bitRegiao(r[2]);
-}
-
-static int distancia(Ponto p, Segmento s) {
-  int dx =
-      std::max({0, std::min(s.a.x, s.b.x) - p.x, p.x - std::max(s.a.x, s.b.x)});
-  int dy =
-      std::max({0, std::min(s.a.y, s.b.y) - p.y, p.y - std::max(s.a.y, s.b.y)});
-  return std::max(dx, dy);
-}
-
-bool colidem(Ponto p, Ponto q) {
-  return std::abs(p.x - q.x) < DIST_COLISAO &&
-         std::abs(p.y - q.y) < DIST_COLISAO;
-}
-
-static bool ehCruzamento(Ponto p) {
-  for (int k = 0; k < NUM_CRUZAMENTOS; k++) {
-    Ponto c = pontoCruzamento(k);
-    if (c.x == p.x && c.y == p.y)
-      return true;
-  }
-  return false;
-}
-
-static Ponto aproximar(Ponto p, Ponto q, int d) {
-  if (p.x != q.x)
-    p.x += (q.x > p.x) ? d : -d;
-  if (p.y != q.y)
-    p.y += (q.y > p.y) ? d : -d;
-  return p;
-}
-
-static Segmento trechoProprio(int regiao) {
-  Segmento s = segmentoRegiao(regiao);
-  Segmento t = s;
-  if (ehCruzamento(s.a))
-    t.a = aproximar(s.a, s.b, DIST_COLISAO);
-  if (ehCruzamento(s.b))
-    t.b = aproximar(s.b, s.a, DIST_COLISAO);
-  return t;
-}
+/*
+ * Em cada entroncamento três trens formam um ciclo de espera. Exemplo em S1:
+ * a está na 1 e quer a 2, c está na 2 e quer a 3, b está na 3 e quer a 1.
+ * Cada linha é uma passagem (região de entrada, região de saída, semáforo).
+ */
+static const int PASSAGEM[12][3] = {
+    {1, 2, 0}, {2, 3, 0}, {3, 1, 0}, // S1: regiões 1, 2 e 3
+    {4, 5, 1}, {5, 8, 1}, {8, 4, 1}, // S2: regiões 4, 5 e 8
+    {5, 3, 2}, {3, 6, 2}, {6, 5, 2}, // S3: regiões 3, 5 e 6
+    {6, 7, 3}, {7, 9, 3}, {9, 6, 3}, // S4: regiões 6, 7 e 9
+};
 
 const Config &configPadrao() {
+  /* b, c e e atravessam três entroncamentos seguidos. Cada um pega uma vaga
+   * antes de ocupar a primeira região do trecho (ver verificador --busca). */
   static const Config config = {
-      true,
-      {{1, 0}, {2, 3}, {4, 1}},
-      {},
-  };
+      true, {0, bitSemaforo(0), bitSemaforo(3), 0, bitSemaforo(1), 0}};
   return config;
 }
 
-template <class Inicio, class Chegada>
-static bool reservarAte(const std::vector<unsigned> &base,
-                        std::vector<unsigned> &posse, Inicio deveIniciar,
-                        Chegada chegou) {
-  const int n = base.size();
-  bool mudou = false;
-  for (int s = 0; s < n; s++) {
-    if (!deveIniciar(s))
-      continue;
-    int q = s;
-    while (!chegou(q)) {
-      q = (q + 1) % n;
-      if (base[q] == 0 || q == s)
-        throw std::logic_error("reserva sem ponto de chegada");
-    }
+static int distanciaRegiao(Ponto p, int regiao) {
+  const int *g = REGIAO[regiao - 1];
+  int x1 = COLUNA[g[0]], y1 = LINHA[g[1]], x2 = COLUNA[g[2]], y2 = LINHA[g[3]];
+  int dx = std::max({0, x1 - p.x, p.x - x2});
+  int dy = std::max({0, y1 - p.y, p.y - y2});
+  return std::max(dx, dy);
+}
 
-    unsigned acumulado = 0;
-    for (int i = q;; i = (i + n - 1) % n) {
-      acumulado |= posse[i];
-      if (posse[i] != (posse[i] | acumulado)) {
-        posse[i] |= acumulado;
-        mudou = true;
-      }
-      if (i == s)
-        break;
-    }
-  }
-  return mudou;
+static std::vector<Ponto> voltaCompleta(int trem) {
+  const int *r = RETANGULO[trem];
+  int esq = COLUNA[r[0]], dir = COLUNA[r[1]];
+  int topo = LINHA[r[2]], base = LINHA[r[3]];
+
+  std::vector<Ponto> pontos;
+  for (int x = dir; x > esq; x -= PASSO) // topo: para a esquerda
+    pontos.push_back({x, topo});
+  for (int y = topo; y < base; y += PASSO) // esquerda: para baixo
+    pontos.push_back({esq, y});
+  for (int x = esq; x < dir; x += PASSO) // base: para a direita
+    pontos.push_back({x, base});
+  for (int y = base; y > topo; y -= PASSO) // direita: para cima
+    pontos.push_back({dir, y});
+  return pontos;
+}
+
+static int semaforoDaPassagem(int entrada, int saida) {
+  for (const int *p : {PASSAGEM[0], PASSAGEM[1], PASSAGEM[2], PASSAGEM[3],
+                       PASSAGEM[4], PASSAGEM[5], PASSAGEM[6], PASSAGEM[7],
+                       PASSAGEM[8], PASSAGEM[9], PASSAGEM[10], PASSAGEM[11]})
+    if (p[0] == entrada && p[1] == saida)
+      return p[2];
+  return -1;
 }
 
 Percurso montarPercurso(int trem, const Config &config) {
   Percurso p;
-  Retangulo r = retangulo(trem);
-
-  for (int x = r.dir; x > r.esq; x -= PASSO)
-    p.pontos.push_back({x, r.topo});
-  for (int y = r.topo; y < r.base; y += PASSO)
-    p.pontos.push_back({r.esq, y});
-  for (int x = r.esq; x < r.dir; x += PASSO)
-    p.pontos.push_back({x, r.base});
-  for (int y = r.base; y > r.topo; y -= PASSO)
-    p.pontos.push_back({r.dir, y});
-
+  p.pontos = voltaCompleta(trem);
   const int n = p.pontos.size();
   auto ant = [n](int i) { return (i + n - 1) % n; };
 
-  std::vector<unsigned> base(n, 0);
-  for (int i = 0; i < n; i++) {
-    for (int reg = 1; reg <= NUM_REGIOES; reg++)
-      if (distancia(p.pontos[i], trechoProprio(reg)) < DIST_COLISAO)
-        base[i] |= bitRegiao(reg);
-    for (int k = 0; k < NUM_CRUZAMENTOS; k++) {
-      Ponto c = pontoCruzamento(k);
-      if (distancia(p.pontos[i], {c, c}) < DIST_COLISAO)
-        base[i] |= bitCruzamento(k);
-    }
-  }
+  /* Perto de uma região da sua rota, o trem precisa do mutex dela. Num
+   * entroncamento isso exige as duas regiões (entrada e saída) ao mesmo tempo.
+   * Três regiões só formam pares que se sobrepõem, então nunca há dois trens
+   * no mesmo entroncamento. */
+  std::vector<unsigned> regioes(n, 0);
+  for (int i = 0; i < n; i++)
+    for (int r : ROTA[trem])
+      if (distanciaRegiao(p.pontos[i], r) < DISTANCIA_SEGURA)
+        regioes[i] |= bitRegiao(r);
 
-  unsigned todasRegioes = 0;
-  for (int reg = 1; reg <= NUM_REGIOES; reg++)
-    todasRegioes |= bitRegiao(reg);
+  p.recursos = regioes;
+  if (!config.semaforos)
+    return p;
 
-  std::vector<unsigned> posse = base;
-  bool mudou = true;
-  while (mudou) {
-    mudou = false;
-    for (int k = 0; k < NUM_CRUZAMENTOS; k++) {
-      unsigned bj = bitCruzamento(k);
-      mudou |= reservarAte(
-          base, posse,
-          [&](int s) { return (base[s] & bj) && !(base[ant(s)] & bj); },
-          [&](int q) { return base[q] & ~base[ant(q)] & todasRegioes; });
-    }
-    for (const Reserva &res : config.reservas) {
-      if (res.trem != trem)
+  /* A vaga do semáforo vale desde a entrada na região até sair do
+   * entroncamento. Com vagas antecipadas, começa no início do trecho. */
+  const std::vector<int> &rota = ROTA[trem];
+  for (size_t a = 0; a + 1 < rota.size(); a++) {
+    unsigned entrada = bitRegiao(rota[a]), saida = bitRegiao(rota[a + 1]);
+    int k = semaforoDaPassagem(rota[a], rota[a + 1]);
+    unsigned ambas = entrada | saida;
+
+    for (int s = 0; s < n; s++) {
+      if ((regioes[s] & ambas) != ambas || (regioes[ant(s)] & ambas) == ambas)
         continue;
-      unsigned bx = bitRegiao(res.regiao), by = bitRegiao(res.ate);
-      mudou |= reservarAte(
-          base, posse,
-          [&](int s) { return (base[s] & bx) && !(base[ant(s)] & bx); },
-          [&](int q) { return base[q] & by; });
-    }
-  }
-
-  if (config.semaforos) {
-    for (int k = 0; k < NUM_CRUZAMENTOS; k++) {
-      unsigned bj = bitCruzamento(k);
-      for (int s = 0; s < n; s++) {
-        if (!(base[s] & bj) || (base[ant(s)] & bj))
-          continue;
-
-        unsigned entrada = base[s] & regioesDoCruzamento(k);
-        int ini = s;
-        while (entrada && (posse[ant(ini)] & entrada))
-          ini = ant(ini);
-        for (const VagaAntecipada &v : config.antecipadas)
-          if (v.trem == trem && v.cruzamento == k)
-            while (posse[ant(ini)] & MASCARA_MUTEXES)
-              ini = ant(ini);
-
-        int fim = s;
-        while (base[(fim + 1) % n] & bj)
-          fim = (fim + 1) % n;
-        for (int i = ini;; i = (i + 1) % n) {
-          posse[i] |= bitSemaforo(k);
-          if (i == fim)
-            break;
-        }
+      int inicio = s;
+      if (config.antecipadas[trem] & bitSemaforo(k)) {
+        while (regioes[ant(inicio)])
+          inicio = ant(inicio);
+      } else {
+        while (regioes[ant(inicio)] & entrada)
+          inicio = ant(inicio);
+      }
+      int fim = s;
+      while ((regioes[(fim + 1) % n] & ambas) == ambas)
+        fim = (fim + 1) % n;
+      for (int i = inicio;; i = (i + 1) % n) {
+        p.recursos[i] |= bitSemaforo(k);
+        if (i == fim)
+          break;
       }
     }
   }
-  p.recursos = posse;
-
-  Ponto inicio;
-  switch (trem) {
-  case 0:
-    inicio = {(r.esq + r.dir) / 2, r.topo};
-    break;
-  case 1:
-  case 3:
-    inicio = {r.esq, (r.topo + r.base) / 2};
-    break;
-  case 4:
-    inicio = {(r.esq + r.dir) / 2, r.base};
-    break;
-  default:
-    inicio = {r.dir, (r.topo + r.base) / 2};
-    break;
-  }
-  p.inicio = -1;
-  for (int i = 0; i < n; i++)
-    if (p.pontos[i].x == inicio.x && p.pontos[i].y == inicio.y)
-      p.inicio = i;
-  if (p.inicio < 0 || p.recursos[p.inicio] != 0)
-    throw std::logic_error("posicao inicial invalida");
-
   return p;
 }
 

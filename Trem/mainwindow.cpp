@@ -1,87 +1,100 @@
 #include "mainwindow.h"
-#include "desenhomalha.h"
 #include "ui_mainwindow.h"
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), ui(new Ui::MainWindow) {
-  ui->setupUi(this);
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow)
+{
+    ui->setupUi(this);
 
-  DesenhoMalha *desenho = new DesenhoMalha(ui->centralWidget);
-  desenho->setGeometry(0, 0, 600, height());
-  desenho->lower();
+    //Cria o trem com seu (ID, posição X, posição Y)
+    trem1 = new Trem(1,420,30);
+    trem2 = new Trem(2,180,270);
+    trem3 = new Trem(3,660,270);
+    trem4 = new Trem(4,60,430);
+    trem5 = new Trem(5,420,510);
+    trem6 = new Trem(6,780,430);
 
-  labelTrem[0] = ui->label_trem1;
-  labelTrem[1] = ui->label_trem2;
-  labelTrem[2] = ui->label_trem3;
-  labelTrem[3] = ui->label_trem4;
-  labelTrem[4] = ui->label_trem5;
-  labelTrem[5] = ui->label_trem6;
+    /*
+     * Conecta o sinal UPDATEGUI à função UPDATEINTERFACE.
+     * Ou seja, sempre que o sinal UPDATEGUI foi chamado, será executada a função UPDATEINTERFACE.
+     * Os 3 parâmetros INT do sinal serão utilizados na função.
+     */
+    connect(trem1,SIGNAL(updateGUI(int,int,int)),SLOT(updateInterface(int,int,int)));
+    connect(trem2,SIGNAL(updateGUI(int,int,int)),SLOT(updateInterface(int,int,int)));
+    connect(trem3,SIGNAL(updateGUI(int,int,int)),SLOT(updateInterface(int,int,int)));
+    connect(trem4,SIGNAL(updateGUI(int,int,int)),SLOT(updateInterface(int,int,int)));
+    connect(trem5,SIGNAL(updateGUI(int,int,int)),SLOT(updateInterface(int,int,int)));
+    connect(trem6,SIGNAL(updateGUI(int,int,int)),SLOT(updateInterface(int,int,int)));
 
-  sliderTrem[0] = ui->slider_a;
-  sliderTrem[1] = ui->slider_b;
-  sliderTrem[2] = ui->slider_c;
-  sliderTrem[3] = ui->slider_d;
-  sliderTrem[4] = ui->slider_e;
-  sliderTrem[5] = ui->slider_f;
-
-  labelValor[0] = ui->valor_a;
-  labelValor[1] = ui->valor_b;
-  labelValor[2] = ui->valor_c;
-  labelValor[3] = ui->valor_d;
-  labelValor[4] = ui->valor_e;
-  labelValor[5] = ui->valor_f;
-
-  for (int i = 0; i < Malha::NUM_TRENS; i++) {
-    trem[i] = new Trem(i + 1);
-    trem[i]->setVelocidade(sliderTrem[i]->value());
-    labelValor[i]->setNum(sliderTrem[i]->value());
-
-    connect(trem[i], SIGNAL(updateGUI(int, int, int)),
-            SLOT(updateInterface(int, int, int)), Qt::QueuedConnection);
-    connect(sliderTrem[i], SIGNAL(valueChanged(int)),
-            SLOT(alterarVelocidade(int)));
-  }
-
-  ui->valor_m->setNum(ui->slider_m->value());
-  connect(ui->slider_m, SIGNAL(valueChanged(int)),
-          SLOT(aplicarControleMestre()));
-  connect(ui->slider_m, SIGNAL(sliderPressed()), SLOT(aplicarControleMestre()));
-
-  for (int i = 0; i < Malha::NUM_TRENS; i++)
-    trem[i]->iniciar();
+    //Os trens começam a andar assim que o programa abre
+    trem1->start();
+    trem2->start();
+    trem3->start();
+    trem4->start();
+    trem5->start();
+    trem6->start();
 }
 
-void MainWindow::updateInterface(int id, int x, int y) {
-  if (id < 1 || id > Malha::NUM_TRENS)
-    return;
-  const int lado = Malha::TAM_TREM;
-  labelTrem[id - 1]->setGeometry(x - lado / 2, y - lado / 2, lado, lado);
-}
-
-void MainWindow::alterarVelocidade(int valor) {
-  for (int i = 0; i < Malha::NUM_TRENS; i++)
-    if (sender() == sliderTrem[i]) {
-      trem[i]->setVelocidade(valor);
-      labelValor[i]->setNum(valor);
+//Função que será executada quando o sinal UPDATEGUI for emitido
+void MainWindow::updateInterface(int id, int x, int y){
+    switch(id){
+    case 1: //Atualiza a posição do objeto da tela (quadrado) que representa o trem1
+        ui->label_trem1->setGeometry(x,y,21,17);
+        break;
+    case 2: //Atualiza a posição do objeto da tela (quadrado) que representa o trem2
+        ui->label_trem2->setGeometry(x,y,21,17);
+        break;
+    case 3:
+        ui->label_trem3->setGeometry(x,y,21,17);
+        break;
+    case 4:
+        ui->label_trem4->setGeometry(x,y,21,17);
+        break;
+    case 5:
+        ui->label_trem5->setGeometry(x,y,21,17);
+        break;
+    case 6:
+        ui->label_trem6->setGeometry(x,y,21,17);
+        break;
+    default:
+        break;
     }
 }
 
-void MainWindow::aplicarControleMestre() {
-  int valor = ui->slider_m->value();
-  ui->valor_m->setNum(valor);
-  for (int i = 0; i < Malha::NUM_TRENS; i++) {
-    sliderTrem[i]->setValue(valor);
-    trem[i]->setVelocidade(valor);
-    labelValor[i]->setNum(valor);
-  }
+void MainWindow::on_slider_a_valueChanged(int valor){ trem1->setVelocidade(valor); }
+void MainWindow::on_slider_b_valueChanged(int valor){ trem2->setVelocidade(valor); }
+void MainWindow::on_slider_c_valueChanged(int valor){ trem3->setVelocidade(valor); }
+void MainWindow::on_slider_d_valueChanged(int valor){ trem4->setVelocidade(valor); }
+void MainWindow::on_slider_e_valueChanged(int valor){ trem5->setVelocidade(valor); }
+void MainWindow::on_slider_f_valueChanged(int valor){ trem6->setVelocidade(valor); }
+
+/*
+ * Controle mestre: move os sliders individuais, e cada um deles
+ * atualiza a velocidade do seu trem.
+ */
+void MainWindow::on_slider_m_valueChanged(int valor){
+    ui->slider_a->setValue(valor);
+    ui->slider_b->setValue(valor);
+    ui->slider_c->setValue(valor);
+    ui->slider_d->setValue(valor);
+    ui->slider_e->setValue(valor);
+    ui->slider_f->setValue(valor);
 }
 
-MainWindow::~MainWindow() {
-  for (int i = 0; i < Malha::NUM_TRENS; i++)
-    trem[i]->parar();
-  for (int i = 0; i < Malha::NUM_TRENS; i++) {
-    trem[i]->aguardar();
-    delete trem[i];
-  }
-  delete ui;
+//Clicar no mestre sem mudar o valor também sobrescreve os ajustes individuais
+void MainWindow::on_slider_m_sliderPressed(){
+    on_slider_m_valueChanged(ui->slider_m->value());
+}
+
+MainWindow::~MainWindow()
+{
+    Trem *trens[] = {trem1, trem2, trem3, trem4, trem5, trem6};
+    for(Trem *t : trens)
+        t->requestInterruption();
+    for(Trem *t : trens){
+        t->wait();
+        delete t;
+    }
+    delete ui;
 }
